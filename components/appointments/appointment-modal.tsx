@@ -34,7 +34,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [extraServiceIds, setExtraServiceIds] = useState<string[]>([])
 
-  // Calculate total value and duration
   const { totalValue, totalDuration } = useMemo(() => {
     let value = 0
     let duration = 0
@@ -56,7 +55,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
     return { totalValue: value, totalDuration: duration }
   }, [serviceId, extraServiceIds])
 
-  // Check if barber is available
   const checkAvailability = (selectedDate: string, selectedTime: string, selectedBarber: string, duration: number, excludeId?: string) => {
     if (!selectedDate || !selectedTime || !selectedBarber) return { available: true, message: '' }
 
@@ -64,7 +62,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
     const startMinutes = hours * 60 + minutes
     const endMinutes = startMinutes + duration
 
-    // Check business hours
     const dayOfWeek = new Date(selectedDate + 'T12:00:00').getDay()
     if (!BUSINESS_HOURS.days.includes(dayOfWeek)) {
       return { available: false, message: 'A barbearia não funciona aos domingos' }
@@ -74,7 +71,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
       return { available: false, message: `Horário fora do expediente (${BUSINESS_HOURS.start}:00 - ${BUSINESS_HOURS.end}:00)` }
     }
 
-    // Check for conflicts with other appointments
     const conflictingAppointment = appointments.find(apt => {
       if (apt.id === excludeId) return false
       if (apt.date !== selectedDate) return false
@@ -85,7 +81,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
       const aptStartMinutes = aptHours * 60 + aptMinutes
       const aptEndMinutes = aptStartMinutes + apt.duration
 
-      // Check for overlap
       return (startMinutes < aptEndMinutes && endMinutes > aptStartMinutes)
     })
 
@@ -100,22 +95,43 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
     return checkAvailability(date, time, barberId, totalDuration, appointment?.id)
   }, [date, time, barberId, totalDuration, appointment?.id, appointments])
 
-  // Generate time slots
+  // Generate time slots - filtra passados e ocupados
   const timeSlots = useMemo(() => {
     const slots: string[] = []
+    const now = new Date()
+    const isToday = date === now.toISOString().split('T')[0]
+    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+
     for (let hour = BUSINESS_HOURS.start; hour < BUSINESS_HOURS.end; hour++) {
       for (let minute = 0; minute < 60; minute += 30) {
-        // Check if the slot would end within business hours
-        const slotEndMinutes = hour * 60 + minute + totalDuration
-        if (slotEndMinutes <= BUSINESS_HOURS.end * 60) {
-          slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
+        const slotStartMinutes = hour * 60 + minute
+        const slotEndMinutes = slotStartMinutes + totalDuration
+
+        if (slotEndMinutes > BUSINESS_HOURS.end * 60) continue
+        if (isToday && slotStartMinutes <= currentMinutes) continue
+
+        if (date && barberId) {
+          const conflict = appointments.find(apt => {
+            if (apt.id === appointment?.id) return false
+            if (apt.date !== date) return false
+            if (apt.barberId !== barberId) return false
+            if (apt.status === 'cancelado') return false
+
+            const [aptH, aptM] = apt.time.split(':').map(Number)
+            const aptStart = aptH * 60 + aptM
+            const aptEnd = aptStart + apt.duration
+
+            return slotStartMinutes < aptEnd && slotEndMinutes > aptStart
+          })
+          if (conflict) continue
         }
+
+        slots.push(`${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
       }
     }
     return slots
-  }, [totalDuration])
+  }, [totalDuration, date, barberId, appointments, appointment?.id])
 
-  // Reset form when opening/closing
   useEffect(() => {
     if (isOpen) {
       if (appointment) {
@@ -140,7 +156,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
     }
   }, [isOpen, appointment])
 
-  // Get minimum date (today)
   const minDate = new Date().toISOString().split('T')[0]
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -155,10 +170,8 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
     if (!service) return
 
     if (appointment) {
-      // Editing existing appointment
       const oldValue = appointment.value
 
-      // If payment was cartao/dinheiro and value changed, update saldoPendente
       if (appointment.paymentMethod === 'cartao' || appointment.paymentMethod === 'dinheiro') {
         if (!appointment.paymentConfirmed) {
           setSaldoPendente(saldoPendente - oldValue + totalValue)
@@ -178,7 +191,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
       })
       showToast('Agendamento atualizado com sucesso', 'success')
     } else {
-      // Creating new appointment
       const newAppointment: Appointment = {
         id: Math.random().toString(36).substring(7),
         clientName,
@@ -197,7 +209,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
 
       addAppointment(newAppointment)
 
-      // Handle payment
       if (paymentMethod === 'pix') {
         setSaldoDisponivel(saldoDisponivel + totalValue)
         addTransaction({
@@ -208,7 +219,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
           value: totalValue,
         })
       } else {
-        // cartao, dinheiro e pix-salao vão para pendente
         setSaldoPendente(saldoPendente + totalValue)
       }
 
@@ -231,7 +241,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-4">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative bg-card border border-border rounded-xl max-w-lg w-full mx-4 shadow-xl animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-border">
           <h3 className="text-xl font-serif font-bold text-foreground">
             {appointment ? 'Editar Agendamento' : 'Novo Agendamento'}
@@ -244,9 +253,7 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
           </button>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {/* Client Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -283,7 +290,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </div>
           </div>
 
-          {/* Service */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Serviço Principal
@@ -303,7 +309,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </select>
           </div>
 
-          {/* Extra Services */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Serviços Extras (opcional)
@@ -332,14 +337,13 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </div>
           </div>
 
-          {/* Barber */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-2">
               Barbeiro
             </label>
             <select
               value={barberId}
-              onChange={(e) => setBarberId(e.target.value)}
+              onChange={(e) => { setBarberId(e.target.value); setTime('') }}
               className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               required
             >
@@ -352,7 +356,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </select>
           </div>
 
-          {/* Date & Time */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -362,7 +365,7 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
                 type="date"
                 value={date}
                 min={minDate}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => { setDate(e.target.value); setTime('') }}
                 className="w-full px-4 py-2.5 rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                 required
               />
@@ -387,7 +390,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </div>
           </div>
 
-          {/* Availability Warning */}
           {!availability.available && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-lg bg-red/10 border border-red/20">
               <AlertTriangle className="w-5 h-5 text-red flex-shrink-0" />
@@ -395,7 +397,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </div>
           )}
 
-          {/* Payment Method - only for new appointments */}
           {!appointment && (
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -420,7 +421,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </div>
           )}
 
-          {/* Summary */}
           <div className="p-4 rounded-lg bg-muted/50 border border-border">
             <div className="flex justify-between items-center">
               <span className="text-muted-foreground">Duração Total:</span>
@@ -432,7 +432,6 @@ export function AppointmentModal({ isOpen, onClose, appointment }: AppointmentMo
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"

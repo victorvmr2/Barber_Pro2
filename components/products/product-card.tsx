@@ -62,6 +62,21 @@ export function ProductCard({ product }: ProductCardProps) {
       case 'entrada':
         newQuantity += qty
         newMovement.type = 'entrada'
+
+        // Atualizar preço se informado
+        if (newPrice.trim()) {
+          const parsedPrice = parseFloat(newPrice.replace(',', '.'))
+          if (!isNaN(parsedPrice) && parsedPrice > 0) {
+            updateProduct(product.id, {
+              quantity: newQuantity,
+              unitPrice: parsedPrice,
+              movements: [...product.movements, newMovement]
+            })
+            showToast('Entrada registrada com sucesso', 'success')
+            closeModal()
+            return
+          }
+        }
         break
 
       case 'venda':
@@ -73,10 +88,8 @@ export function ProductCard({ product }: ProductCardProps) {
         const saleValue = qty * product.unitPrice
         newMovement.value = saleValue
 
-        // Add to available balance
         setSaldoDisponivel(saldoDisponivel + saleValue)
 
-        // Log transaction
         addTransaction({
           id: Math.random().toString(36).substring(7),
           date: new Date().toISOString(),
@@ -97,21 +110,6 @@ export function ProductCard({ product }: ProductCardProps) {
         }
         newQuantity -= qty
         newMovement.reason = reason
-
-        // Atualizar preço se informado
-        if (newPrice.trim()) {
-          const parsedPrice = parseFloat(newPrice.replace(',', '.'))
-          if (!isNaN(parsedPrice) && parsedPrice > 0) {
-            updateProduct(product.id, {
-              quantity: newQuantity,
-              unitPrice: parsedPrice,
-              movements: [...product.movements, newMovement]
-            })
-            showToast('Baixa registrada com sucesso', 'success')
-            closeModal()
-            return
-          }
-        }
         break
     }
 
@@ -121,8 +119,8 @@ export function ProductCard({ product }: ProductCardProps) {
     })
 
     showToast(
-      activeModal === 'entrada' 
-        ? 'Entrada registrada com sucesso' 
+      activeModal === 'entrada'
+        ? 'Entrada registrada com sucesso'
         : activeModal === 'venda'
           ? 'Venda realizada com sucesso'
           : 'Baixa registrada com sucesso',
@@ -326,8 +324,8 @@ export function ProductCard({ product }: ProductCardProps) {
                   </div>
                 )}
 
-                {/* New Price (for baixa only) */}
-                {activeModal === 'baixa' && (
+                {/* New Price (for entrada only) */}
+                {activeModal === 'entrada' && (
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-2">
                       Atualizar Valor Unitário <span className="text-muted-foreground font-normal">(opcional)</span>
